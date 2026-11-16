@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_dark">#111318</color>
+    <color name="card_dark">#1B1F27</color>
+    <color name="card_stroke">#2C323F</color>
+    <color name="text_primary">#F1F3F6</color>
+    <color name="text_secondary">#9AA2B1</color>
+    <color name="accent_blue">#8AB4F8</color>
+    <color name="badge_green_bg">#1B3B2B</color>
+    <color name="badge_green_text">#6DD58C</color>
+    <color name="floating_bg">#E61A1D24</color>
+    <color name="floating_stroke">#55FFFFFF</color>
+    <color name="power_red_bg">#3B1C20</color>
+    <color name="power_red_tint">#FF6B6B</color>
+</resources>

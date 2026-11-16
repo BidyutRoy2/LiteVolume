@@ -1,0 +1,2 @@
+-keep class com.bidyut.litevolume.PowerAccessibilityService { *; }
+-keep class com.bidyut.litevolume.FloatingControlService { *; }
