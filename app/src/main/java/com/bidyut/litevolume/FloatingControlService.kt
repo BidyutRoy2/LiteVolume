@@ -191,11 +191,9 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
             return
         }
 
-        // Save exact handle position before hiding it
         savedAnchorX = params.x
         savedAnchorY = params.y
 
-        // Hide the floating circular button and show ONLY +, -, Power buttons
         btnHandle.visibility = View.GONE
         panelControls.visibility = View.VISIBLE
 
@@ -226,7 +224,6 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
         stopVolumeRepeat()
         if (panelControls.visibility != View.VISIBLE && btnHandle.visibility == View.VISIBLE) return
 
-        // Hide +, -, Power buttons and bring back the floating circular button
         panelControls.visibility = View.GONE
         btnHandle.visibility = View.VISIBLE
 
@@ -250,20 +247,22 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
     }
 
     private fun triggerLiveSystemVolume(direction: Int) {
-        val flags = AudioManager.FLAG_SHOW_UI or AudioManager.FLAG_ALLOW_RINGER_MODES
-        try {
-            audioManager.adjustSuggestedStreamVolume(
-                direction,
-                AudioManager.STREAM_MUSIC,
-                flags
-            )
-        } catch (_: Exception) {
-            audioManager.adjustStreamVolume(
-                AudioManager.STREAM_MUSIC,
-                direction,
-                AudioManager.FLAG_SHOW_UI
-            )
+        val targetStream = if (
+            audioManager.mode == AudioManager.MODE_IN_CALL ||
+            audioManager.mode == AudioManager.MODE_IN_COMMUNICATION
+        ) {
+            AudioManager.STREAM_VOICE_CALL
+        } else {
+            AudioManager.STREAM_MUSIC
         }
+
+        // Direct adjustStreamVolume with FLAG_SHOW_UI forces Android & MIUI/HyperOS
+        // SystemUI to show the native live volume slider HUD on screen.
+        audioManager.adjustStreamVolume(
+            targetStream,
+            direction,
+            AudioManager.FLAG_SHOW_UI
+        )
     }
 
     private fun stopVolumeRepeat() {

@@ -12,4 +12,6 @@
     <color name="floating_stroke">#55FFFFFF</color>
     <color name="power_red_bg">#3B1C20</color>
     <color name="power_red_tint">#FF6B6B</color>
+    <color name="footer_card_bg">#161A22</color>
+    <color name="footer_card_stroke">#3D5A80</color>
 </resources>
