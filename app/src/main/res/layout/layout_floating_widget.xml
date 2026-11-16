@@ -1,19 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/rootContainer"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:gravity="center_vertical"
-    android:orientation="horizontal"
-    android:padding="4dp">
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:padding="6dp">
 
-    <!-- Circular Always-On Speaker Button -->
+    <!-- Circular Always-On Speaker Button (Hides when tapped) -->
     <FrameLayout
         android:id="@+id/btnHandle"
         android:layout_width="48dp"
         android:layout_height="48dp"
         android:background="@drawable/bg_circle_button"
-        android:elevation="6dp">
+        android:elevation="6dp"
+        android:visibility="visible">
 
         <ImageView
             android:id="@+id/ivHandleIcon"
@@ -24,14 +25,16 @@
             android:src="@drawable/ic_volume" />
     </FrameLayout>
 
-    <!-- Vertical Stack: + / - / Power -->
+    <!-- Vertical Stack: + / - / Power (Replaces floating popup until 3s timeout) -->
     <LinearLayout
         android:id="@+id/panelControls"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginHorizontal="8dp"
+        android:clipChildren="false"
+        android:clipToPadding="false"
         android:gravity="center_horizontal"
         android:orientation="vertical"
+        android:padding="4dp"
         android:visibility="gone">
 
         <FrameLayout
@@ -54,7 +57,7 @@
             android:id="@+id/btnVolDown"
             android:layout_width="46dp"
             android:layout_height="46dp"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="18dp"
             android:background="@drawable/bg_circle_button"
             android:elevation="6dp">
 
@@ -71,7 +74,7 @@
             android:id="@+id/btnPower"
             android:layout_width="50dp"
             android:layout_height="50dp"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="18dp"
             android:background="@drawable/bg_circle_power"
             android:elevation="6dp"
             android:gravity="center"
@@ -96,4 +99,4 @@
 
     </LinearLayout>
 
-</LinearLayout>
+</FrameLayout>

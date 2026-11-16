@@ -16,7 +16,7 @@ class PowerAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // No event inspection needed; lightweight local-only action trigger
+        // Lightweight local-only action trigger
     }
 
     override fun onInterrupt() {}

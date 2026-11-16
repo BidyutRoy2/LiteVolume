@@ -34,6 +34,8 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
         @Volatile
         var isRunning: Boolean = false
         private const val AUTO_COLLAPSE_DELAY_MS = 3000L
+        private const val HOLD_INITIAL_DELAY_MS = 380L
+        private const val HOLD_REPEAT_INTERVAL_MS = 150L
     }
 
     private lateinit var windowManager: WindowManager
@@ -42,7 +44,6 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
     private lateinit var prefs: SharedPreferences
     private lateinit var audioManager: AudioManager
 
-    private lateinit var rootContainer: LinearLayout
     private lateinit var btnHandle: FrameLayout
     private lateinit var ivHandleIcon: ImageView
     private lateinit var panelControls: LinearLayout
@@ -56,7 +57,10 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
 
     private val handler = Handler(Looper.getMainLooper())
     private val collapseRunnable = Runnable { collapsePanel() }
-    private var isExpandedOnRightSide = false
+    private var repeatRunnable: Runnable? = null
+
+    private var savedAnchorX = 0
+    private var savedAnchorY = 500
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -71,12 +75,11 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
 
         prefs = getSharedPreferences("lite_vol_prefs", Context.MODE_PRIVATE)
         prefs.registerOnSharedPreferenceChangeListener(this)
-        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        audioManager = applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
         floatingView = LayoutInflater.from(this).inflate(R.layout.layout_floating_widget, null)
 
-        rootContainer = floatingView.findViewById(R.id.rootContainer)
         btnHandle = floatingView.findViewById(R.id.btnHandle)
         ivHandleIcon = floatingView.findViewById(R.id.ivHandleIcon)
         panelControls = floatingView.findViewById(R.id.panelControls)
@@ -90,6 +93,8 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
 
         val screenWidth = resources.displayMetrics.widthPixels
         val defaultX = (screenWidth - (64 * resources.displayMetrics.density).toInt()).coerceAtLeast(0)
+        savedAnchorX = prefs.getInt("pos_x", defaultX)
+        savedAnchorY = prefs.getInt("pos_y", 500)
 
         params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -99,8 +104,8 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = prefs.getInt("pos_x", defaultX)
-            y = prefs.getInt("pos_y", 500)
+            x = savedAnchorX
+            y = savedAnchorY
         }
 
         setupTouchAndDrag()
@@ -167,13 +172,11 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
                 }
                 MotionEvent.ACTION_UP -> {
                     if (isMoved) {
-                        saveCurrentPosition()
+                        savedAnchorX = params.x
+                        savedAnchorY = params.y
+                        prefs.edit().putInt("pos_x", savedAnchorX).putInt("pos_y", savedAnchorY).apply()
                     } else {
-                        if (panelControls.visibility == View.VISIBLE) {
-                            collapsePanel()
-                        } else {
-                            expandPanel()
-                        }
+                        expandPanel()
                     }
                     true
                 }
@@ -182,68 +185,59 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
         }
     }
 
-    private fun saveCurrentPosition() {
-        // Save the anchor X of the circular handle regardless of expanded state
-        val anchorX = if (panelControls.visibility == View.VISIBLE && isExpandedOnRightSide) {
-            params.x + panelControls.width + getMarginPx()
-        } else {
-            params.x
-        }
-        prefs.edit().putInt("pos_x", anchorX).putInt("pos_y", params.y).apply()
-    }
-
-    private fun getMarginPx(): Int = (16 * resources.displayMetrics.density).toInt()
-
     private fun expandPanel() {
         if (panelControls.visibility == View.VISIBLE) {
             resetCollapseTimer()
             return
         }
 
-        val screenWidth = resources.displayMetrics.widthPixels
-        val handleCenterX = params.x + (btnHandle.width / 2)
-        isExpandedOnRightSide = handleCenterX > screenWidth / 2
+        // Save exact handle position before hiding it
+        savedAnchorX = params.x
+        savedAnchorY = params.y
 
-        rootContainer.removeAllViews()
-        if (isExpandedOnRightSide) {
-            rootContainer.addView(panelControls)
-            rootContainer.addView(btnHandle)
-        } else {
-            rootContainer.addView(btnHandle)
-            rootContainer.addView(panelControls)
-        }
-
+        // Hide the floating circular button and show ONLY +, -, Power buttons
+        btnHandle.visibility = View.GONE
         panelControls.visibility = View.VISIBLE
+
         panelControls.measure(
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
         )
 
-        if (isExpandedOnRightSide) {
-            val shiftLeft = panelControls.measuredWidth + getMarginPx()
-            params.x = (params.x - shiftLeft).coerceAtLeast(0)
-        }
+        val pad = (12 * resources.displayMetrics.density).toInt()
+        val stackWidth = panelControls.measuredWidth + pad
+        val stackHeight = panelControls.measuredHeight + pad
+        val maxX = (resources.displayMetrics.widthPixels - stackWidth).coerceAtLeast(0)
+        val maxY = (resources.displayMetrics.heightPixels - stackHeight - 24).coerceAtLeast(0)
 
-        val maxY = (resources.displayMetrics.heightPixels - maxOf(btnHandle.height, panelControls.measuredHeight) - 32).coerceAtLeast(0)
-        params.y = params.y.coerceIn(0, maxY)
+        params.x = savedAnchorX.coerceIn(0, maxX)
+        params.y = savedAnchorY.coerceIn(0, maxY)
 
         if (floatingView.isAttachedToWindow) {
             windowManager.updateViewLayout(floatingView, params)
         }
+
+        triggerLiveSystemVolume(AudioManager.ADJUST_SAME)
         resetCollapseTimer()
     }
 
     private fun collapsePanel() {
         handler.removeCallbacks(collapseRunnable)
-        if (panelControls.visibility != View.VISIBLE) return
+        stopVolumeRepeat()
+        if (panelControls.visibility != View.VISIBLE && btnHandle.visibility == View.VISIBLE) return
 
-        val panelOffset = panelControls.width + getMarginPx()
+        // Hide +, -, Power buttons and bring back the floating circular button
         panelControls.visibility = View.GONE
+        btnHandle.visibility = View.VISIBLE
 
-        if (isExpandedOnRightSide) {
-            val maxX = (resources.displayMetrics.widthPixels - btnHandle.width).coerceAtLeast(0)
-            params.x = (params.x + panelOffset).coerceIn(0, maxX)
-        }
+        val pad = (12 * resources.displayMetrics.density).toInt()
+        val handleW = btnHandle.layoutParams.width + pad
+        val handleH = btnHandle.layoutParams.height + pad
+        val maxX = (resources.displayMetrics.widthPixels - handleW).coerceAtLeast(0)
+        val maxY = (resources.displayMetrics.heightPixels - handleH).coerceAtLeast(0)
+
+        params.x = savedAnchorX.coerceIn(0, maxX)
+        params.y = savedAnchorY.coerceIn(0, maxY)
 
         if (floatingView.isAttachedToWindow) {
             windowManager.updateViewLayout(floatingView, params)
@@ -255,24 +249,63 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
         handler.postDelayed(collapseRunnable, AUTO_COLLAPSE_DELAY_MS)
     }
 
-    private fun setupButtons() {
-        btnVolUp.setOnClickListener {
+    private fun triggerLiveSystemVolume(direction: Int) {
+        val flags = AudioManager.FLAG_SHOW_UI or AudioManager.FLAG_ALLOW_RINGER_MODES
+        try {
+            audioManager.adjustSuggestedStreamVolume(
+                direction,
+                AudioManager.STREAM_MUSIC,
+                flags
+            )
+        } catch (_: Exception) {
             audioManager.adjustStreamVolume(
                 AudioManager.STREAM_MUSIC,
-                AudioManager.ADJUST_RAISE,
+                direction,
                 AudioManager.FLAG_SHOW_UI
             )
-            resetCollapseTimer()
         }
+    }
 
-        btnVolDown.setOnClickListener {
-            audioManager.adjustStreamVolume(
-                AudioManager.STREAM_MUSIC,
-                AudioManager.ADJUST_LOWER,
-                AudioManager.FLAG_SHOW_UI
-            )
-            resetCollapseTimer()
+    private fun stopVolumeRepeat() {
+        repeatRunnable?.let { handler.removeCallbacks(it) }
+        repeatRunnable = null
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun bindVolumeButton(buttonView: View, direction: Int) {
+        buttonView.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.animate().scaleX(0.90f).scaleY(0.90f).setDuration(70).start()
+                    handler.removeCallbacks(collapseRunnable)
+                    stopVolumeRepeat()
+
+                    triggerLiveSystemVolume(direction)
+
+                    val runnable = object : Runnable {
+                        override fun run() {
+                            triggerLiveSystemVolume(direction)
+                            handler.postDelayed(this, HOLD_REPEAT_INTERVAL_MS)
+                        }
+                    }
+                    repeatRunnable = runnable
+                    handler.postDelayed(runnable, HOLD_INITIAL_DELAY_MS)
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(70).start()
+                    stopVolumeRepeat()
+                    resetCollapseTimer()
+                    true
+                }
+                else -> false
+            }
         }
+    }
+
+    private fun setupButtons() {
+        bindVolumeButton(btnVolUp, AudioManager.ADJUST_RAISE)
+        bindVolumeButton(btnVolDown, AudioManager.ADJUST_LOWER)
 
         btnPower.setOnClickListener {
             val service = PowerAccessibilityService.instance
@@ -291,18 +324,16 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
     }
 
     private fun applySettings() {
-        // 1. Opacity (20% to 100%)
         val opacityPercent = prefs.getInt("opacity", 85).coerceIn(20, 100)
         floatingView.alpha = opacityPercent / 100f
 
-        // 2. Power button visibility
         val showPower = prefs.getBoolean("show_power", true)
         btnPower.visibility = if (showPower) View.VISIBLE else View.GONE
 
-        // 3. Size scaling (70% to 150%)
         val sizePercent = prefs.getInt("size", 100).coerceIn(70, 150)
         val scale = sizePercent / 100f
         val density = resources.displayMetrics.density
+        val buttonGapPx = (18 * density * scale).toInt()
 
         val handleSize = (48 * density * scale).toInt()
         val iconSize = (22 * density * scale).toInt()
@@ -325,9 +356,10 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
             height = iconSize
         }
 
-        btnVolDown.layoutParams = btnVolDown.layoutParams.apply {
+        btnVolDown.layoutParams = (btnVolDown.layoutParams as LinearLayout.LayoutParams).apply {
             width = actionBtnSize
             height = actionBtnSize
+            topMargin = buttonGapPx
         }
         ivVolDown.layoutParams = ivVolDown.layoutParams.apply {
             width = iconSize
@@ -336,9 +368,10 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
 
         val powerBtnSize = (50 * density * scale).toInt()
         val powerIconSize = (18 * density * scale).toInt()
-        btnPower.layoutParams = btnPower.layoutParams.apply {
+        btnPower.layoutParams = (btnPower.layoutParams as LinearLayout.LayoutParams).apply {
             width = powerBtnSize
             height = powerBtnSize
+            topMargin = buttonGapPx
         }
         ivPower.layoutParams = ivPower.layoutParams.apply {
             width = powerIconSize
@@ -358,6 +391,7 @@ class FloatingControlService : Service(), SharedPreferences.OnSharedPreferenceCh
     override fun onDestroy() {
         isRunning = false
         handler.removeCallbacks(collapseRunnable)
+        stopVolumeRepeat()
         prefs.unregisterOnSharedPreferenceChangeListener(this)
         if (::floatingView.isInitialized && floatingView.isAttachedToWindow) {
             windowManager.removeView(floatingView)
